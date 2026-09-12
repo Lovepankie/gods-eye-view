@@ -535,6 +535,17 @@
         </div>
         <div id="map-stack-chips" class="map-stack-chip-row" role="group" aria-label="Map source"></div>
       </section>
+      <section class="map-source-section view-mode-section" aria-labelledby="view-mode-label">
+        <div class="map-source-heading">
+          <span id="view-mode-label">VIEW</span>
+          <span id="view-mode-status" class="pp-stack-status" aria-live="polite">3D</span>
+        </div>
+        <div id="view-mode-chips" class="map-stack-chip-row view-mode-chip-row" role="group" aria-label="View mode">
+          <button class="map-stack-chip active" data-view-mode="3d" type="button" aria-pressed="true" title="3D globe">3D Globe</button>
+          <button class="map-stack-chip" data-view-mode="2d" type="button" aria-pressed="false" title="Flat 2D street map">2D Map</button>
+          <button class="map-stack-chip" data-view-mode="ground" type="button" aria-pressed="false" title="Street-level ground view">Ground</button>
+        </div>
+      </section>
       </div>
       <div id="style-mini-status" class="panel-mini-status" aria-live="polite">
         <span class="panel-mini-label">Style</span>
@@ -569,6 +580,10 @@
             </button>
             <input type="text" id="location-search" placeholder="Search any location..." autocomplete="off" spellcheck="false" aria-label="Search location by name or coordinates" />
           </div>
+        </div>
+        <div id="maps-link-row" class="maps-link-row">
+          <input type="text" id="maps-link-input" class="maps-link-input" placeholder="Paste Google Maps link or lat,lng…" autocomplete="off" spellcheck="false" aria-label="Fly to a Google Maps link or coordinates" />
+          <button id="maps-link-go" class="maps-link-go" type="button" title="Fly to this location">GO</button>
         </div>
       </div>
     </div>

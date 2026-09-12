@@ -12,7 +12,8 @@ import {
   clampBloomIntensity,
   decodeBloomIntensity,
 } from './bloom.js';
-import { LOCATIONS, CITY_POIS, GLOBE_VIEW, flyToGlobeView, flyToPresetLocation, flyToPOI, searchAndFlyTo } from './locations.js';
+import { LOCATIONS, CITY_POIS, GLOBE_VIEW, flyToGlobeView, flyToPresetLocation, flyToPOI, searchAndFlyTo, flyToLandmark } from './locations.js';
+import { resolveMapsLink } from './data/mapsLink.js';
 import { locationMiniStatus } from './locationStatus.js';
 import { interruptCameraMotion } from './cameraVerbs.js';
 import {
@@ -2443,6 +2444,10 @@ export class StyleManager {
     this._toast = document.getElementById('toast');
     this._locationSearch = document.getElementById('location-search');
     this._searchToggle = document.getElementById('search-toggle');
+    this._mapsLinkInput = document.getElementById('maps-link-input');
+    this._mapsLinkGo = document.getElementById('maps-link-go');
+    this._viewModeChips = document.getElementById('view-mode-chips');
+    this._viewModeStatus = document.getElementById('view-mode-status');
     this._locationPills = document.getElementById('location-pills');
     this._poiRow = document.getElementById('poi-row');
     this._locationBarDivider = document.getElementById('location-bar-divider');
@@ -2699,6 +2704,7 @@ export class StyleManager {
     this._initCctvPanel();
     this._initGlobalContextPanel();
     this._initLocationBar();
+    this._initGotoAndView();
     this._initShareButton();
     this._initClearSelectedLayersButton();
     this._initResetGlobeButton();
@@ -9531,6 +9537,194 @@ export class StyleManager {
         }
       }
     });
+  }
+
+  // JUSTIFICATION-A3: additive feature — new goto-link + view-mode methods, no existing code carries this.
+  /**
+   * Wires the "paste a Google Maps link" box and the 3D / 2D / Ground view-mode
+   * switcher. Both are optional controls — bail quietly if their markup is
+   * absent so headless/embedded builds don't throw.
+   * @returns {void}
+   */
+  _initGotoAndView() {
+    // Paste-a-link: Enter in the field or the GO button both fly to the coords.
+    if (this._mapsLinkInput) {
+      this._mapsLinkInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this._handleMapsLinkGo();
+        }
+      });
+    }
+    if (this._mapsLinkGo) {
+      this._mapsLinkGo.addEventListener('click', () => this._handleMapsLinkGo());
+    }
+
+    // View-mode chips: 3D globe / 2D flat map / street-level ground.
+    if (this._viewModeChips) {
+      this._viewModeChips.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-view-mode]');
+        if (!btn) return;
+        this._setViewMode(btn.getAttribute('data-view-mode'));
+      });
+    }
+    this._viewMode = '3d';
+  }
+
+  /**
+   * Resolves whatever is in the maps-link box (a Google Maps URL, a short
+   * maps.app.goo.gl link, or a raw "lat,lng") to a coordinate and flies there.
+   * @returns {Promise<void>}
+   */
+  async _handleMapsLinkGo() {
+    const input = this._mapsLinkInput;
+    if (!input) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+    input.classList.add('searching');
+    try {
+      const hit = await resolveMapsLink(raw);
+      if (this._disposed) return;
+      if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+        this._flyToPastedLocation(hit.lat, hit.lng, hit.label);
+      } else {
+        this._showToast('Could not read that Google Maps link');
+      }
+    } catch (err) {
+      console.error('[MapsLink]', err);
+      if (!this._disposed) this._showToast('Link lookup failed');
+    } finally {
+      input.classList.remove('searching');
+    }
+  }
+
+  /**
+   * Drops (or moves) a marker pin at a coordinate and flies the camera to it.
+   * @param {number} lat
+   * @param {number} lng
+   * @param {string} [label]
+   * @returns {void}
+   */
+  _flyToPastedLocation(lat, lng, label) {
+    if (!this.viewer) return;
+    const text = label || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+    // A single reusable pin — replace it on each new drop.
+    if (this._pastedPin) {
+      try { this.viewer.entities.remove(this._pastedPin); } catch { /* no-op */ }
+      this._pastedPin = null;
+    }
+    this._pastedPin = this.viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat),
+      point: {
+        pixelSize: 13,
+        color: Cesium.Color.fromCssColorString('#00e5ff'),
+        outlineColor: Cesium.Color.fromCssColorString('#001014'),
+        outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text,
+        font: '12px "IBM Plex Mono", monospace',
+        pixelOffset: new Cesium.Cartesian2(0, -22),
+        fillColor: Cesium.Color.WHITE,
+        showBackground: true,
+        backgroundColor: Cesium.Color.fromCssColorString('rgba(0, 16, 20, 0.82)'),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        style: Cesium.LabelStyle.FILL,
+      },
+    });
+
+    // Ground/2D would frame this awkwardly — snap to 3D instantly (duration 0)
+    // so the restore morph doesn't fight the fly-to below.
+    if (this.viewer.scene && this.viewer.scene.mode !== Cesium.SceneMode.SCENE3D) {
+      this._setViewMode('3d', { duration: 0 });
+    }
+    flyToLandmark(this.viewer, lat, lng, {
+      range: 1600,
+      pitch: -40,
+      heading: 0,
+      buildingHeight: 0,
+      duration: 3.0,
+    });
+    this._showToast(`Flying to ${text}`);
+  }
+
+  /**
+   * Switches the globe between 3D, a flat 2D street map, and a street-level
+   * ground view. 2D forces an OSM raster basemap (Google 3D tiles don't render
+   * in a 2D projection); leaving 2D restores whatever basemap was active.
+   * @param {'3d'|'2d'|'ground'} mode
+   * @param {object} [opts]
+   * @param {number} [opts.duration] - Morph duration in seconds (0 = instant).
+   * @returns {void}
+   */
+  _setViewMode(mode, { duration } = {}) {
+    if (!this.viewer || !this.viewer.scene) return;
+    const scene = this.viewer.scene;
+
+    const setActive = (id) => {
+      if (this._viewModeChips) {
+        for (const b of this._viewModeChips.querySelectorAll('[data-view-mode]')) {
+          const on = b.getAttribute('data-view-mode') === id;
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+      }
+      if (this._viewModeStatus) {
+        this._viewModeStatus.textContent =
+          id === '2d' ? '2D' : id === 'ground' ? 'GROUND' : '3D';
+      }
+      this._viewMode = id;
+    };
+
+    if (mode === '2d') {
+      // Remember the current basemap so 3D can restore it, then drop to an
+      // OSM road basemap that actually renders flat.
+      const activeId = this.mapStackController?.getActiveId?.();
+      if (activeId && activeId !== 'osm') this._preFlatMapStack = activeId;
+      const morph = () => scene.morphTo2D(duration ?? 1.0);
+      if (activeId !== 'osm') {
+        // Morph only after the flat-friendly basemap is in place, so the Google
+        // 3D tileset is gone before the 2D projection engages.
+        Promise.resolve(this._setMapStack('osm', { syncShare: false })).then(morph);
+      } else {
+        morph();
+      }
+      setActive('2d');
+      return;
+    }
+
+    if (mode === 'ground') {
+      // Street-level oblique look at whatever the camera is currently over.
+      const carto = this.viewer.camera.positionCartographic;
+      const lat = Cesium.Math.toDegrees(carto.latitude);
+      const lng = Cesium.Math.toDegrees(carto.longitude);
+      const dive = () =>
+        flyToLandmark(this.viewer, lat, lng, {
+          range: 220,
+          pitch: -10,
+          heading: Cesium.Math.toDegrees(this.viewer.camera.heading) || 0,
+          buildingHeight: 20,
+          duration: 2.0,
+        });
+      if (scene.mode !== Cesium.SceneMode.SCENE3D) {
+        scene.morphTo3D(0.8);
+        setTimeout(dive, 850);
+      } else {
+        dive();
+      }
+      setActive('ground');
+      return;
+    }
+
+    // Default: 3D globe. Restore the pre-2D basemap if we swapped it.
+    if (this._preFlatMapStack) {
+      this._setMapStack(this._preFlatMapStack, { syncShare: false });
+      this._preFlatMapStack = null;
+    }
+    scene.morphTo3D(duration ?? 1.0);
+    setActive('3d');
   }
 
   /**

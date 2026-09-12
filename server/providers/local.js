@@ -1,6 +1,7 @@
 import { terrainHeightsProxy } from './terrain.js';
 import { tomtomProxy } from './traffic.js';
 import { firmsProxy } from './firms.js';
+import { mapsLinkProxy } from './mapsLink.js';
 import { gbfsProxy } from './gbfs.js';
 import { celestrakProxy, rocketLaunchesProxy } from './space.js';
 export { LL2_CACHE_TTL_MS, launchLibraryRequestHeaders } from './space.js';
@@ -4666,6 +4667,7 @@ export function localProviderPlugins() {
       trackBackfillProxies(),
       openAiRealtimeProxy(),
       googlePlacesContextProxy(),
+      mapsLinkProxy(),
       keySetupEndpoint(),
   ];
 }
