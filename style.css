@@ -9747,3 +9747,38 @@ body.scene-playback-mode #key-setup {
   border-color: rgba(0, 229, 255, 0.65);
   outline: none;
 }
+
+/* "Show my current location" button (feature/my-location) */
+.my-location-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-bright, #e8f6ff);
+  background: rgba(0, 229, 255, 0.10);
+  border: 1px solid rgba(0, 229, 255, 0.34);
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+.my-location-btn:hover,
+.my-location-btn:focus-visible {
+  background: rgba(0, 229, 255, 0.22);
+  border-color: rgba(0, 229, 255, 0.6);
+  outline: none;
+}
+.my-location-btn:disabled,
+.my-location-btn.locating {
+  opacity: 0.6;
+  cursor: progress;
+}

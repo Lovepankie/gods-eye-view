@@ -2448,6 +2448,7 @@ export class StyleManager {
     this._mapsLinkGo = document.getElementById('maps-link-go');
     this._viewModeChips = document.getElementById('view-mode-chips');
     this._viewModeStatus = document.getElementById('view-mode-status');
+    this._myLocationBtn = document.getElementById('my-location-btn');
     this._locationPills = document.getElementById('location-pills');
     this._poiRow = document.getElementById('poi-row');
     this._locationBarDivider = document.getElementById('location-bar-divider');
@@ -9559,6 +9560,9 @@ export class StyleManager {
     if (this._mapsLinkGo) {
       this._mapsLinkGo.addEventListener('click', () => this._handleMapsLinkGo());
     }
+    if (this._myLocationBtn) {
+      this._myLocationBtn.addEventListener('click', () => this._flyToMyLocation());
+    }
 
     // View-mode chips: 3D globe / 2D flat map / street-level ground.
     if (this._viewModeChips) {
@@ -9596,6 +9600,58 @@ export class StyleManager {
     } finally {
       input.classList.remove('searching');
     }
+  }
+
+  // JUSTIFICATION-A3: additive feature — new "fly to my GPS location" method, no existing code carries this.
+  /**
+   * Asks the browser for the device's current position (needs HTTPS / a secure
+   * context) and flies there with a dropped pin, reusing the paste-link flight.
+   * @returns {void}
+   */
+  _flyToMyLocation() {
+    const btn = this._myLocationBtn;
+    if (!('geolocation' in navigator)) {
+      this._showToast('This browser has no location support');
+      return;
+    }
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+      // getCurrentPosition silently fails on plain http; say so up front.
+      this._showToast('Location needs HTTPS — open the https:// site');
+      return;
+    }
+    if (btn) {
+      btn.classList.add('locating');
+      btn.disabled = true;
+    }
+    const done = () => {
+      if (btn) {
+        btn.classList.remove('locating');
+        btn.disabled = false;
+      }
+    };
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        done();
+        if (this._disposed) return;
+        const { latitude, longitude, accuracy } = pos.coords;
+        this._flyToPastedLocation(latitude, longitude, 'You are here');
+        this._showToast(`You are here (±${Math.round(accuracy)} m)`);
+      },
+      (err) => {
+        done();
+        if (this._disposed) return;
+        const msg =
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission denied'
+            : err.code === err.POSITION_UNAVAILABLE
+              ? 'Location unavailable'
+              : err.code === err.TIMEOUT
+                ? 'Location request timed out'
+                : 'Could not get your location';
+        this._showToast(msg);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+    );
   }
 
   /**
